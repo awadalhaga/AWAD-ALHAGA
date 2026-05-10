@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام تنظيم المرضى - قائمة الانتظار</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="main-container">
+        <header class="app-header">
+            <div class="header-content">
+                <h1>نظام تنظيم المرضى</h1>
+                <div class="header-actions">
+                    <span class="patient-count">عدد المنتظرين: <strong id="patientCount">0</strong></span>
+                    <button onclick="loadPatients()" class="btn btn-refresh" title="تحديث">
+                        &#x21BB; تحديث
+                    </button>
+                    <a href="/settings" class="btn btn-settings" title="الإعدادات">
+                        &#x2699; الإعدادات
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <main class="content">
+            <div class="table-container">
+                <div id="loading" class="loading-spinner" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>جاري التحميل...</p>
+                </div>
+
+                <div id="errorMessage" class="alert alert-error" style="display: none;"></div>
+
+                <div id="emptyMessage" class="empty-state" style="display: none;">
+                    <div class="empty-icon">&#x2714;</div>
+                    <h2>لا يوجد مرضى في الانتظار</h2>
+                    <p>جميع المرضى تم تأكيد دخولهم</p>
+                </div>
+
+                <table id="patientsTable" class="patients-table" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>رقم التذكرة</th>
+                            <th>اسم المريض</th>
+                            <th>اسم الطبيب</th>
+                            <th>وقت الوصول</th>
+                            <th>الحالة</th>
+                            <th>إجراء</th>
+                        </tr>
+                    </thead>
+                    <tbody id="patientsBody">
+                    </tbody>
+                </table>
+            </div>
+        </main>
+
+        <footer class="app-footer">
+            <p>نظام تنظيم المرضى للعيادات &copy; 2024 | التحديث التلقائي كل 10 ثوانٍ</p>
+        </footer>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <h3>تأكيد دخول المريض</h3>
+            <p id="confirmMessage"></p>
+            <div class="modal-actions">
+                <button onclick="executeConfirm()" class="btn btn-primary">نعم، تأكيد الدخول</button>
+                <button onclick="closeModal()" class="btn btn-cancel">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let refreshInterval;
+        let currentTktno = null;
+
+        async function loadPatients() {
+            const loading = document.getElementById('loading');
+            const table = document.getElementById('patientsTable');
+            const empty = document.getElementById('emptyMessage');
+            const errorDiv = document.getElementById('errorMessage');
+            const tbody = document.getElementById('patientsBody');
+            const countEl = document.getElementById('patientCount');
+
+            loading.style.display = 'flex';
+            errorDiv.style.display = 'none';
+
+            try {
+                const response = await fetch('/api/patients');
+                const data = await response.json();
+
+                loading.style.display = 'none';
+
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                    table.style.display = 'none';
+                    empty.style.display = 'none';
+                    return;
+                }
+
+                countEl.textContent = data.count;
+
+                if (data.patients.length === 0) {
+                    table.style.display = 'none';
+                    empty.style.display = 'flex';
+                    return;
+                }
+
+                empty.style.display = 'none';
+                table.style.display = 'table';
+
+                tbody.innerHTML = '';
+                data.patients.forEach((patient, index) => {
+                    const tr = document.createElement('tr');
+                    const counterTime = patient.Countertime
+                        ? new Date(patient.Countertime).toLocaleTimeString('ar-EG')
+                        : '-';
+
+                    tr.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td><span class="ticket-badge">${patient.Tktno}</span></td>
+                        <td class="patient-name">${patient.Pname}</td>
+                        <td class="doctor-name">${patient.Drname}</td>
+                        <td>${counterTime}</td>
+                        <td><span class="status-badge status-waiting">انتظار</span></td>
+                        <td>
+                            <button onclick="confirmEntry('${patient.Tktno}', '${patient.Pname}')"
+                                    class="btn btn-confirm">
+                                تأكيد الدخول
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (error) {
+                loading.style.display = 'none';
+                errorDiv.textContent = 'خطأ في الاتصال بالسيرفر: ' + error.message;
+                errorDiv.style.display = 'block';
+            }
+        }
+
+        function confirmEntry(tktno, pname) {
+            currentTktno = tktno;
+            document.getElementById('confirmMessage').textContent =
+                `هل تريد تأكيد دخول المريض "${pname}" للطبيب؟`;
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('confirmModal').style.display = 'none';
+            currentTktno = null;
+        }
+
+        async function executeConfirm() {
+            if (!currentTktno) return;
+
+            try {
+                const response = await fetch(`/api/confirm/${currentTktno}`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+
+                closeModal();
+
+                if (data.success) {
+                    loadPatients();
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                closeModal();
+                alert('حدث خطأ أثناء تأكيد الدخول: ' + error.message);
+            }
+        }
+
+        // Close modal on outside click
+        document.getElementById('confirmModal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        // Initial load
+        loadPatients();
+
+        // Auto-refresh every 10 seconds
+        refreshInterval = setInterval(loadPatients, 10000);
+    </script>
+</body>
+</html>
