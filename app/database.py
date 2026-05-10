@@ -1,6 +1,13 @@
-import pyodbc
+from __future__ import annotations
 
 from app.config import get_config
+
+
+def _import_pyodbc():
+    """Lazy import pyodbc to allow app startup without ODBC driver installed."""
+    import pyodbc
+
+    return pyodbc
 
 
 def get_connection_string() -> str | None:
@@ -18,8 +25,9 @@ def get_connection_string() -> str | None:
     )
 
 
-def get_connection() -> pyodbc.Connection | None:
+def get_connection():
     """Create a database connection."""
+    pyodbc = _import_pyodbc()
     conn_str = get_connection_string()
     if not conn_str:
         return None
@@ -29,6 +37,7 @@ def get_connection() -> pyodbc.Connection | None:
 def test_connection(server: str, username: str, password: str) -> tuple[bool, str]:
     """Test database connection with given credentials."""
     try:
+        pyodbc = _import_pyodbc()
         conn_str = (
             f"DRIVER={{ODBC Driver 17 for SQL Server}};"
             f"SERVER={server};"
@@ -40,7 +49,7 @@ def test_connection(server: str, username: str, password: str) -> tuple[bool, st
         conn = pyodbc.connect(conn_str, timeout=10)
         conn.close()
         return True, "تم الاتصال بنجاح"
-    except pyodbc.Error as e:
+    except Exception as e:
         return False, f"فشل الاتصال: {e}"
 
 
@@ -94,7 +103,7 @@ def confirm_patient_entry(tktno: str) -> tuple[bool, str]:
         if cursor.rowcount > 0:
             return True, "تم تأكيد دخول المريض"
         return False, "لم يتم العثور على المريض أو تم تأكيد دخوله مسبقاً"
-    except pyodbc.Error as e:
+    except Exception as e:
         return False, f"حدث خطأ: {e}"
     finally:
         conn.close()
